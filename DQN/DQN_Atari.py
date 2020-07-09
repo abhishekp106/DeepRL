@@ -13,38 +13,41 @@ from PIL import Image
 from skimage.transform import downscale_local_mean
 import time
 
+import wrappers 
+
 MEMORY_CAPACITY = 10000
-NUM_EPISODES = 100
+NUM_EPISODES = 400
 BATCH_SIZE = 32
 DISCOUNT = 0.99
-EPSILON_DECAY = 0.995
+EPSILON_DECAY = 0.99
 TARGET_UPDATE = 1000
 
 class CNN(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(CNN, self).__init__()
         # input is (100, 80)
-        self.conv1 = nn.Conv2d(1, 32, 4, stride=4)
-        self.conv2 = nn.Conv2d(32, 64, 5, stride=1)
-        self.conv3 = nn.Conv2d(64, 64, 3, stride=2)
+        self.conv1 = nn.Conv2d(4, 32, 8, stride=4)
+        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
         #print((input_shape[0], input_shape[1]))
-        y_output, x_output = self.get_output_size((input_shape[0], input_shape[1]), 4, 4)
+        y_output, x_output = self.get_output_size((input_shape[0], input_shape[1]), 8, 4)
         #print((y_output, x_output))
-        y_output, x_output = self.get_output_size((y_output, x_output), 5, 1)
+        y_output, x_output = self.get_output_size((y_output, x_output), 4, 2)
         #print((y_output, x_output))
-        y_output, x_output = self.get_output_size((y_output, x_output), 3, 2)
-        #print((y_output, x_output))
+        y_output, x_output = self.get_output_size((y_output, x_output), 3, 1)
+        print((y_output, x_output))
         self.num_features = 64 * (y_output * x_output)
-        self.fc1 = nn.Linear(self.num_features, 512)
-        self.fc2 = nn.Linear(512, num_actions)
+        self.fc1 = nn.Linear(self.num_features, 100)
+        self.fc2 = nn.Linear(100, num_actions)
     
     def forward(self, x):
         x = x.float() / 255
-        x = x.unsqueeze(1)
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
         x = x.view(-1, self.num_features)
+        
+        #print(x.shape)
         x = F.relu(self.fc1(x))
         return self.fc2(x)
     
@@ -58,8 +61,8 @@ class ReplayMemory():
         self.capacity = capacity
         self.contents = []
     
-    def add(self, *args):
-        self.contents.append(transition(*args))
+    def add(self, s, a, r, s_new, terminal):
+        self.contents.append(transition(s, a, r, s_new, terminal))
         if len(self.contents) > self.capacity:
             self.contents.pop(0)
 
@@ -90,7 +93,7 @@ class DQN():
         else:
             # choose the best (predicted) action
             with torch.no_grad():
-                _, index = self.Q(torch.as_tensor(s, dtype=torch.float32).unsqueeze(0).to(device))[0].max(0)
+                _, index = self.Q(s)[0].max(0)
                 return index.item()
     
     def max_Qvalue(self, s):
@@ -102,6 +105,12 @@ class DQN():
         downscaled_img = Image.fromarray(downscale_local_mean(np.array(grayscaled_img), (2,2)))
         return np.array(imageops.grayscale(downscaled_img))[:100, :]
 
+    def get_state(self, obs):
+        state = np.array(obs)
+        state = state.transpose((2, 0, 1))
+        state = torch.from_numpy(state)
+        return state.unsqueeze(0)
+
     def experience_replay(self):
         if self.replay_memory.length() < MEMORY_CAPACITY:
             return 0
@@ -109,7 +118,12 @@ class DQN():
 
         # create a mask to tell us how to calculate rewards
         non_terminal_mask = torch.tensor([not x.terminal for x in transitions], dtype=torch.int, device=device)
-        batch_states = torch.tensor([x.state for x in transitions], dtype=torch.float32, device=device)
+        try:
+            batch_states = torch.tensor([x.state for x in transitions], dtype=torch.float32, device=device)
+        except:
+            print(transitions[0])
+            print(type(transitions[0].state))
+            print(type(transitions[0].next_state))
         batch_next_states = torch.tensor([x.next_state for x in transitions], dtype=torch.float32, device=device)
         batch_actions = torch.tensor([x.action for x in transitions], dtype=torch.int, device=device)
         batch_rewards = torch.tensor([x.reward for x in transitions], dtype=torch.float32, device=device)
@@ -135,15 +149,15 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
-        del non_terminal_mask
-        del batch_states
-        del batch_next_states
-        del batch_actions
-        del batch_rewards
-        del loss
+        #del non_terminal_mask
+        #del batch_states
+        #del batch_next_states
+        #del batch_actions
+        #del batch_rewards
+        #del loss
 
         # comment out if using GPU
-        # return q_values.mean()
+        return q_values.mean()
 
     def train(self):
         EPSILON = 1.0
@@ -152,13 +166,15 @@ class DQN():
         q_estimates = []
         ep_rewards_temp = []
         q_estimates_temp = []
-        self.Q_target = CNN((100, 80), 6).to(device)
+        self.Q_target = CNN((84, 84), 6).to(device)
         self.Q_target.load_state_dict(self.Q.state_dict())
         num_steps = 1
 
         for episode in range(NUM_EPISODES):
             s = env.reset()
-            s = self.process_img(s)
+            #print(s)
+            s = self.get_state(s)
+            #print(s.shape)
             done = False
             
             ep_reward = 0.0
@@ -167,9 +183,13 @@ class DQN():
             while not done:
                 a = self.get_epsilon_greedy_action(s, EPSILON)
                 s_new, reward, done, _ = env.step(a)
-                s_new = self.process_img(s_new)
+                #s_new = self.process_img(s_new)
+                s_new = self.get_state(s_new)
+                #print(s_new.shape)
 
                 self.replay_memory.add(s, a, reward, s_new, done)
+                if (self.replay_memory.length() >= MEMORY_CAPACITY):
+                    print('capacity exceeded')
                 num_steps += 1
                 ep_length += 1
                 s = s_new
@@ -177,19 +197,20 @@ class DQN():
                 x = self.experience_replay()
                 q_sum += x
                 if num_steps % TARGET_UPDATE == 0:
+                    #print('update')
                     self.Q_target.load_state_dict(self.Q.state_dict())
-            if EPSILON > 0.1:
+            if EPSILON > 0.02:
                 EPSILON *= EPSILON_DECAY
             
             ep_rewards.append(ep_reward)
             q_estimates.append((q_sum / ep_length))
             ep_rewards_temp.append(ep_reward)
             q_estimates_temp.append((q_sum / ep_length))
-            if episode % 1 == 0:
+            if episode % 20 == 0:
                 rewards = torch.as_tensor(ep_rewards_temp, dtype=torch.float)
                 q = torch.as_tensor(q_estimates_temp, dtype=torch.float)
                 print('Episode {} w/ Epsilon: {:.6}'.format(episode, EPSILON))
-                print('Reward Mean: {:.3}, Std Dev: {:.3}, Max: {:.3}, Min: {:.3}'.format(rewards.mean().item(), rewards.std().item(), rewards.max().item(), rewards.min().item()))
+                print('Reward Sum: {:.3}, Mean: {:.3}, Std Dev: {:.3}, Max: {:.3}, Min: {:.3}'.format(rewards.sum().item(), rewards.mean().item(), rewards.std().item(), rewards.max().item(), rewards.min().item()))
                 print('Q-Value Mean: {:.3}, Std Dev: {:.3}, Max: {:.3}, Min: {:.3}'.format(q.mean().item(), q.std().item(), q.max().item(), q.min().item()))
                 ep_rewards_temp = []
                 q_estimates_temp = []
@@ -208,9 +229,10 @@ class DQN():
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = gym.make('Pong-v0')
-    Q = CNN((100, 80), 6).to(device)
+    env = gym.make('PongNoFrameskip-v4')
+    env = wrappers.make_env(env)
+    Q = CNN((84, 84), 6).to(device)
     transition = namedtuple('transition', ['state', 'action', 'reward', 'next_state', 'terminal'])
-    optimizer = torch.optim.Adam(Q.parameters())
+    optimizer = torch.optim.Adam(Q.parameters(), lr=1e-4)
     dqn = DQN(env, Q, 2, optimizer)
     dqn.train()

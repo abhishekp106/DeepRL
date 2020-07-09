@@ -9,7 +9,7 @@ from collections import namedtuple
 import matplotlib.pyplot as plt
 
 MEMORY_CAPACITY = 1000
-NUM_EPISODES = 300
+NUM_EPISODES = 400
 BATCH_SIZE = 32
 DISCOUNT = 0.95
 EPSILON_DECAY = 0.992
@@ -17,11 +17,12 @@ EPSILON_DECAY = 0.992
 class MLP(nn.Module):
     def __init__(self):
         super(MLP, self).__init__()
-        self.fc1 = nn.Linear(2, 24)
+        self.fc1 = nn.Linear(4, 24)
         self.fc2 = nn.Linear(24, 24)
         self.fc3 = nn.Linear(24, 2)
     
     def forward(self, x):
+        #print(x.shape)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -98,7 +99,7 @@ class DQN():
         next_state_values = q_values.max(1)[0].detach()
         target_values = batch_rewards + (next_state_values * DISCOUNT) * (non_terminal_mask)
 
-        criterion = nn.MSELoss()
+        criterion = nn.SmoothL1Loss()
         loss = criterion(predicted, target_values)
         self.loss_array.append(loss.item())
 
