@@ -10,7 +10,7 @@ import copy
 import cv2
 cv2.ocl.setUseOpenCL(False)
 
-def make_env(env, stack_frames=True, episodic_life=True, clip_rewards=False, scale=False):
+def make_env(env, stack_frames=True, episodic_life=True, scale=False):
     if episodic_life:
         env = EpisodicLifeEnv(env)
 
@@ -22,17 +22,7 @@ def make_env(env, stack_frames=True, episodic_life=True, clip_rewards=False, sca
     env = WarpFrame(env)
     if stack_frames:
         env = FrameStack(env, 4)
-    if clip_rewards:
-        env = ClipRewardEnv(env)
     return env
-
-class ClipRewardEnv(gym.RewardWrapper):
-    def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
-
-    def reward(self, reward):
-        """Bin reward to {+1, 0, -1} by its sign."""
-        return np.sign(reward)
 
 class LazyFrames(object):
     def __init__(self, frames):

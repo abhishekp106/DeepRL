@@ -11,9 +11,7 @@ import numpy as np
 import PIL.ImageOps as imageops
 from PIL import Image
 from skimage.transform import downscale_local_mean
-import time
-
-import wrappers 
+import wrappers
 
 MEMORY_CAPACITY = 10000
 NUM_EPISODES = 400
@@ -29,11 +27,8 @@ class CNN(nn.Module):
         self.conv1 = nn.Conv2d(4, 32, 8, stride=4)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
-        #print((input_shape[0], input_shape[1]))
         y_output, x_output = self.get_output_size((input_shape[0], input_shape[1]), 8, 4)
-        #print((y_output, x_output))
         y_output, x_output = self.get_output_size((y_output, x_output), 4, 2)
-        #print((y_output, x_output))
         y_output, x_output = self.get_output_size((y_output, x_output), 3, 1)
         print((y_output, x_output))
         self.num_features = 64 * (y_output * x_output)
@@ -149,13 +144,6 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
-        #del non_terminal_mask
-        #del batch_states
-        #del batch_next_states
-        #del batch_actions
-        #del batch_rewards
-        #del loss
-
         # comment out if using GPU
         return q_values.mean()
 
@@ -172,9 +160,7 @@ class DQN():
 
         for episode in range(NUM_EPISODES):
             s = env.reset()
-            #print(s)
             s = self.get_state(s)
-            #print(s.shape)
             done = False
             
             ep_reward = 0.0
@@ -183,9 +169,7 @@ class DQN():
             while not done:
                 a = self.get_epsilon_greedy_action(s, EPSILON)
                 s_new, reward, done, _ = env.step(a)
-                #s_new = self.process_img(s_new)
                 s_new = self.get_state(s_new)
-                #print(s_new.shape)
 
                 self.replay_memory.add(s, a, reward, s_new, done)
                 if (self.replay_memory.length() >= MEMORY_CAPACITY):
