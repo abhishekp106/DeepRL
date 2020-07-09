@@ -30,7 +30,7 @@ class CNN(nn.Module):
         y_output, x_output = self.get_output_size((input_shape[0], input_shape[1]), 8, 4)
         y_output, x_output = self.get_output_size((y_output, x_output), 4, 2)
         y_output, x_output = self.get_output_size((y_output, x_output), 3, 1)
-        print((y_output, x_output))
+        #print((y_output, x_output))
         self.num_features = 64 * (y_output * x_output)
         self.fc1 = nn.Linear(self.num_features, 100)
         self.fc2 = nn.Linear(100, num_actions)
@@ -107,19 +107,14 @@ class DQN():
         return state.unsqueeze(0)
 
     def experience_replay(self):
-        if self.replay_memory.length() < MEMORY_CAPACITY:
-            return 0
+        if self.replay_memory.length() < BATCH_SIZE:
+            return -1
         transitions = self.replay_memory.sample(BATCH_SIZE)
 
         # create a mask to tell us how to calculate rewards
         non_terminal_mask = torch.tensor([not x.terminal for x in transitions], dtype=torch.int, device=device)
-        try:
-            batch_states = torch.tensor([x.state for x in transitions], dtype=torch.float32, device=device)
-        except:
-            print(transitions[0])
-            print(type(transitions[0].state))
-            print(type(transitions[0].next_state))
-        batch_next_states = torch.tensor([x.next_state for x in transitions], dtype=torch.float32, device=device)
+        batch_states = torch.cat([x.state for x in transitions], dim=0)
+        batch_next_states = torch.cat([x.next_state for x in transitions], dim=0)
         batch_actions = torch.tensor([x.action for x in transitions], dtype=torch.int, device=device)
         batch_rewards = torch.tensor([x.reward for x in transitions], dtype=torch.float32, device=device)
         output = self.Q(batch_states)
@@ -161,6 +156,7 @@ class DQN():
         for episode in range(NUM_EPISODES):
             s = env.reset()
             s = self.get_state(s)
+            #print(s.shape)
             done = False
             
             ep_reward = 0.0
