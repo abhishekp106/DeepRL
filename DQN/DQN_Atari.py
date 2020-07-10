@@ -1,11 +1,11 @@
+from random import random
+from collections import namedtuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as distr
+import torch.tensor as tensor
 import gym
-from random import sample
-from random import random
-from collections import namedtuple
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -29,32 +29,31 @@ class DQN():
         self.optimizer = optimizer
         self.replay_memory = ReplayMemory(MEMORY_CAPACITY)
         self.loss_array = []
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    def get_epsilon_greedy_action(self, s, exploration_prob):
+    def get_epsilon_greedy_action(self, q_values, exploration_prob):
         x = random()
         if x <= exploration_prob:
             # choose a random action that is not the best
             return self.env.action_space.sample()
         else:
             # choose the best (predicted) action
-            with torch.no_grad():
-                _, index = self.Q(s)[0].max(0)
-                return index.item()
+            return np.argmax(q_values[0])
     
     def max_Qvalue(self, s):
         value, _ = self.Q(torch.as_tensor(s, dtype=torch.float32)).unsqueeze(1).max(0)
         return value
 
-    def process_img(self, img):
-        grayscaled_img = imageops.grayscale(Image.fromarray(img))
-        downscaled_img = Image.fromarray(downscale_local_mean(np.array(grayscaled_img), (2,2)))
-        return np.array(imageops.grayscale(downscaled_img))[:100, :]
+    def get_q_values(self, s):
+        with torch.no_grad():
+            state = torch.tensor(s, dtype=torch.float32).detach().to(self.device).unsqueeze(0)
+            q_values = self.Q(state)
+            #print(q_values)
+            return q_values.to('cpu').detach().numpy()
 
     def get_state(self, obs):
-        state = np.array(obs)
-        state = state.transpose((2, 0, 1))
-        state = torch.from_numpy(state)
-        return state.unsqueeze(0).detach()
+        #state = state.transpose((2, 0, 1))
+        return torch.from_numpy(obs).unsqueeze(0).detach()
 
     def experience_replay(self):
         if self.replay_memory.length() < BATCH_SIZE:
@@ -104,18 +103,20 @@ class DQN():
         num_steps = 1
 
         for episode in range(NUM_EPISODES):
-            s = env.reset().unsqueeze(0)
-            print(s.shape)
-            #print(s.shape)
+            s = env.reset()
+            #s = self.get_state(s)
             done = False
             
             ep_reward = 0.0
             q_sum = 0.0
             ep_length = 0
             while not done:
-                a = self.get_epsilon_greedy_action(s, EPSILON)
+                q_values = self.get_q_values(s)
+                #print(q_values[0])
+                #print(np.argmax(q_values[0]))
+                a = self.get_epsilon_greedy_action(q_values, EPSILON)
                 s_new, reward, done, _ = env.step(a)
-                s_new = self.get_state(s_new)
+                #s_new = self.get_state(s_new)
 
                 self.replay_memory.add(s, a, reward, s_new, done)
                 if (self.replay_memory.length() >= MEMORY_CAPACITY):

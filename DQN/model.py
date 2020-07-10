@@ -18,7 +18,7 @@ class CNN(nn.Module):
         self.fc2 = nn.Linear(100, num_actions)
     
     def forward(self, x):
-        x = x.float() / 255
+        #x = x.float() / 255
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
