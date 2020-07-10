@@ -8,10 +8,10 @@ from random import random
 from collections import namedtuple
 import matplotlib.pyplot as plt
 import numpy as np
-import PIL.ImageOps as imageops
-from PIL import Image
-from skimage.transform import downscale_local_mean
+
 import wrappers
+from model import CNN
+from replay_memory import ReplayMemory
 
 MEMORY_CAPACITY = 10000
 NUM_EPISODES = 400
@@ -19,59 +19,6 @@ BATCH_SIZE = 32
 DISCOUNT = 0.99
 EPSILON_DECAY = 0.99
 TARGET_UPDATE = 1000
-
-class CNN(nn.Module):
-    def __init__(self, input_shape, num_actions):
-        super(CNN, self).__init__()
-        # input is (100, 80)
-        self.conv1 = nn.Conv2d(4, 32, 8, stride=4)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
-        y_output, x_output = self.get_output_size((input_shape[0], input_shape[1]), 8, 4)
-        y_output, x_output = self.get_output_size((y_output, x_output), 4, 2)
-        y_output, x_output = self.get_output_size((y_output, x_output), 3, 1)
-        #print((y_output, x_output))
-        self.num_features = 64 * (y_output * x_output)
-        self.fc1 = nn.Linear(self.num_features, 100)
-        self.fc2 = nn.Linear(100, num_actions)
-    
-    def forward(self, x):
-        x = x.float() / 255
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = x.view(-1, self.num_features)
-        
-        #print(x.shape)
-        x = F.relu(self.fc1(x))
-        return self.fc2(x)
-    
-    def get_output_size(self, input_shape, field_size, stride):
-        y, x = input_shape
-        return int(((y - field_size) / stride) + 1), int(((x - field_size) / stride) + 1)
-
-
-class ReplayMemory():
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.contents = []
-        self.idx = 0
-    
-    def add(self, s, a, r, s_new, terminal):
-        if self.idx < self.capacity:
-            self.contents.append(transition(s, a, r, s_new, terminal))
-        else:
-            self.contents[self.idx] = transition(s, a, r, s_new, terminal)
-        self.idx = (self.idx + 1) % self.capacity
-
-    def sample(self, num_samples):
-        return sample(self.contents, num_samples)
-    
-    def length(self):
-        return len(self.contents)
-    
-    def display(self):
-        print(self.contents)
 
 class DQN():
     def __init__(self, env, Q, num_actions, optimizer):
@@ -143,7 +90,7 @@ class DQN():
         self.optimizer.step()
 
         # comment out if using GPU
-        return q_values.mean()
+        return q_values.mean().detach()
 
     def train(self):
         EPSILON = 1.0
@@ -157,10 +104,9 @@ class DQN():
         num_steps = 1
 
         for episode in range(NUM_EPISODES):
-            s = env.reset()
+            s = env.reset().unsqueeze(0)
             print(s.shape)
-            s = self.get_state(s)
-            print(s.shape)
+            #print(s.shape)
             done = False
             
             ep_reward = 0.0
