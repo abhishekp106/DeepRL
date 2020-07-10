@@ -55,11 +55,14 @@ class ReplayMemory():
     def __init__(self, capacity):
         self.capacity = capacity
         self.contents = []
+        self.idx = 0
     
     def add(self, s, a, r, s_new, terminal):
-        self.contents.append(transition(s, a, r, s_new, terminal))
-        if len(self.contents) > self.capacity:
-            self.contents.pop(0)
+        if self.idx < self.capacity:
+            self.contents.append(transition(s, a, r, s_new, terminal))
+        else:
+            self.contents[self.idx] = transition(s, a, r, s_new, terminal)
+        self.idx = (self.idx + 1) % self.capacity
 
     def sample(self, num_samples):
         return sample(self.contents, num_samples)
@@ -104,7 +107,7 @@ class DQN():
         state = np.array(obs)
         state = state.transpose((2, 0, 1))
         state = torch.from_numpy(state)
-        return state.unsqueeze(0)
+        return state.unsqueeze(0).detach()
 
     def experience_replay(self):
         if self.replay_memory.length() < BATCH_SIZE:
@@ -130,7 +133,7 @@ class DQN():
         next_state_values = q_values.max(1)[0].detach()
         target_values = batch_rewards + (next_state_values * DISCOUNT) * (non_terminal_mask)
 
-        criterion = nn.SmoothL1Loss()
+        criterion = nn.MSELoss()
         loss = criterion(predicted, target_values)
         self.loss_array.append(loss.item())
 
@@ -155,8 +158,9 @@ class DQN():
 
         for episode in range(NUM_EPISODES):
             s = env.reset()
+            print(s.shape)
             s = self.get_state(s)
-            #print(s.shape)
+            print(s.shape)
             done = False
             
             ep_reward = 0.0
@@ -210,7 +214,7 @@ class DQN():
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     env = gym.make('PongNoFrameskip-v4')
-    env = wrappers.make_env(env)
+    env = wrappers.Create(env)
     Q = CNN((84, 84), 6).to(device)
     transition = namedtuple('transition', ['state', 'action', 'reward', 'next_state', 'terminal'])
     optimizer = torch.optim.Adam(Q.parameters(), lr=1e-4)
