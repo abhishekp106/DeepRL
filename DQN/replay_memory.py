@@ -1,7 +1,7 @@
 from collections import namedtuple
 from random import sample
 
-transition = namedtuple('transition', ['state', 'action', 'reward', 'next_state', 'terminal'])
+transition = namedtuple('transition', ['state', 'q_values', 'action', 'reward', 'next_state', 'terminal'])
 
 class ReplayMemory():
     def __init__(self, capacity):
@@ -9,11 +9,11 @@ class ReplayMemory():
         self.contents = []
         self.idx = 0
     
-    def add(self, s, a, r, s_new, terminal):
+    def add(self, *args):
         if self.idx < self.capacity:
-            self.contents.append(transition(s, a, r, s_new, terminal))
+            self.contents.append(transition(*args))
         else:
-            self.contents[self.idx] = transition(s, a, r, s_new, terminal)
+            self.contents[self.idx] = transition(*args)
         self.idx = (self.idx + 1) % self.capacity
 
     def sample(self, num_samples):

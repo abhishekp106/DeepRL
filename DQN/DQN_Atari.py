@@ -13,11 +13,11 @@ import wrappers
 from model import CNN
 from replay_memory import ReplayMemory
 
-MEMORY_CAPACITY = 10000
-NUM_EPISODES = 400
+MEMORY_CAPACITY = 16384
+NUM_EPISODES = 10000
 BATCH_SIZE = 32
 DISCOUNT = 0.99
-EPSILON_DECAY = 0.99
+EPSILON_DECAY = 0.9999
 TARGET_UPDATE = 1000
 
 class DQN():
@@ -48,7 +48,6 @@ class DQN():
         with torch.no_grad():
             state = torch.tensor(s, dtype=torch.float32).detach().to(self.device).unsqueeze(0)
             q_values = self.Q(state)
-            #print(q_values)
             return q_values.to('cpu').detach().numpy()
 
     def get_state(self, obs):
@@ -61,11 +60,13 @@ class DQN():
         transitions = self.replay_memory.sample(BATCH_SIZE)
 
         # create a mask to tell us how to calculate rewards
-        non_terminal_mask = torch.tensor([not x.terminal for x in transitions], dtype=torch.int, device=device)
-        batch_states = torch.cat([x.state for x in transitions], dim=0)
-        batch_next_states = torch.cat([x.next_state for x in transitions], dim=0)
-        batch_actions = torch.tensor([x.action for x in transitions], dtype=torch.int, device=device)
-        batch_rewards = torch.tensor([x.reward for x in transitions], dtype=torch.float32, device=device)
+        non_terminal_mask = torch.tensor([not x.terminal for x in transitions], dtype=torch.int, device=self.device)
+        batch_states = torch.from_numpy(np.stack([x.state for x in transitions])).float().to(self.device)
+        #print(np.stack([x.state for x in transitions]).shape)
+        batch_next_states = torch.from_numpy(np.stack([x.state for x in transitions])).float().to(self.device)
+        #print(batch_states.shape)
+        batch_actions = torch.tensor([x.action for x in transitions], dtype=torch.int, device=self.device)
+        batch_rewards = torch.tensor([x.reward for x in transitions], dtype=torch.float32, device=self.device)
         output = self.Q(batch_states)
         
         # we SELECT the Q-values of the actions that we took for each transition
@@ -112,15 +113,10 @@ class DQN():
             ep_length = 0
             while not done:
                 q_values = self.get_q_values(s)
-                #print(q_values[0])
-                #print(np.argmax(q_values[0]))
                 a = self.get_epsilon_greedy_action(q_values, EPSILON)
                 s_new, reward, done, _ = env.step(a)
-                #s_new = self.get_state(s_new)
 
-                self.replay_memory.add(s, a, reward, s_new, done)
-                if (self.replay_memory.length() >= MEMORY_CAPACITY):
-                    print('capacity exceeded')
+                self.replay_memory.add(s, q_values, a, reward, s_new, done)
                 num_steps += 1
                 ep_length += 1
                 s = s_new
@@ -137,7 +133,7 @@ class DQN():
             q_estimates.append((q_sum / ep_length))
             ep_rewards_temp.append(ep_reward)
             q_estimates_temp.append((q_sum / ep_length))
-            if episode % 20 == 0:
+            if episode % 50 == 0:
                 rewards = torch.as_tensor(ep_rewards_temp, dtype=torch.float)
                 q = torch.as_tensor(q_estimates_temp, dtype=torch.float)
                 print('Episode {} w/ Epsilon: {:.6}'.format(episode, EPSILON))
@@ -163,7 +159,7 @@ if __name__ == "__main__":
     env = gym.make('PongNoFrameskip-v4')
     env = wrappers.Create(env)
     Q = CNN((84, 84), 6).to(device)
-    transition = namedtuple('transition', ['state', 'action', 'reward', 'next_state', 'terminal'])
+    #transition = namedtuple('transition', ['state', 'action', 'reward', 'next_state', 'terminal'])
     optimizer = torch.optim.Adam(Q.parameters(), lr=1e-4)
     dqn = DQN(env, Q, 2, optimizer)
     dqn.train()
