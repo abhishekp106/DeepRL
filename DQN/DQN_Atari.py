@@ -13,7 +13,7 @@ import wrappers
 from model import CNN
 from replay_memory import ReplayMemory
 
-MEMORY_CAPACITY = 16384
+MEMORY_CAPACITY = 1000
 NUM_EPISODES = 10000
 BATCH_SIZE = 32
 DISCOUNT = 0.99
@@ -99,9 +99,10 @@ class DQN():
         q_estimates = []
         ep_rewards_temp = []
         q_estimates_temp = []
-        self.Q_target = CNN((84, 84), 6).to(device)
+        self.Q_target = CNN((84, 84), 4).to(device)
         self.Q_target.load_state_dict(self.Q.state_dict())
         num_steps = 1
+        displayed = False
 
         for episode in range(NUM_EPISODES):
             s = env.reset()
@@ -117,6 +118,9 @@ class DQN():
                 s_new, reward, done, _ = env.step(a)
 
                 self.replay_memory.add(s, q_values, a, reward, s_new, done)
+                if self.replay_memory.length() >= MEMORY_CAPACITY and not displayed:
+                    print('Capacity reached. *********************************************')
+                    displayed = True
                 num_steps += 1
                 ep_length += 1
                 s = s_new
@@ -134,8 +138,8 @@ class DQN():
             ep_rewards_temp.append(ep_reward)
             q_estimates_temp.append((q_sum / ep_length))
             if episode % 50 == 0:
-                rewards = torch.as_tensor(ep_rewards_temp, dtype=torch.float)
-                q = torch.as_tensor(q_estimates_temp, dtype=torch.float)
+                rewards = torch.as_tensor(ep_rewards_temp, dtype=torch.float).detach()
+                q = torch.as_tensor(q_estimates_temp, dtype=torch.float).detach()
                 print('Episode {} w/ Epsilon: {:.6}'.format(episode, EPSILON))
                 print('Reward Sum: {:.3}, Mean: {:.3}, Std Dev: {:.3}, Max: {:.3}, Min: {:.3}'.format(rewards.sum().item(), rewards.mean().item(), rewards.std().item(), rewards.max().item(), rewards.min().item()))
                 print('Q-Value Mean: {:.3}, Std Dev: {:.3}, Max: {:.3}, Min: {:.3}'.format(q.mean().item(), q.std().item(), q.max().item(), q.min().item()))
@@ -156,9 +160,10 @@ class DQN():
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = gym.make('PongNoFrameskip-v4')
+    env = gym.make('BreakoutNoFrameskip-v4')
     env = wrappers.Create(env)
-    Q = CNN((84, 84), 6).to(device)
+    print(env.action_space)
+    Q = CNN((84, 84), 4).to(device)
     #transition = namedtuple('transition', ['state', 'action', 'reward', 'next_state', 'terminal'])
     optimizer = torch.optim.Adam(Q.parameters(), lr=1e-4)
     dqn = DQN(env, Q, 2, optimizer)

@@ -105,7 +105,6 @@ class SkipEnv(gym.Wrapper):
 
         return obs, total_reward, done, info
 
-
 class ClipRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -114,7 +113,6 @@ class ClipRewardEnv(gym.RewardWrapper):
         obs, reward, done, info = self.env.step(action)
         reward = np.clip(reward, -1.0, 1.0)
         return obs, reward, done, info
-
 
 class LiveLostReward(gym.Wrapper):
     def __init__(self, env):
@@ -149,6 +147,42 @@ class LiveLostReward(gym.Wrapper):
 
         return observation, reward, [self.round_done, self.game_done], info
 
+class EpisodicLifeEnv(gym.Wrapper):
+	def __init__(self, env):
+		"""Make end-of-life == end-of-episode, but only reset on true game over.
+		Done by DeepMind for the DQN and co. since it helps value estimation.
+		"""
+		gym.Wrapper.__init__(self, env)
+		self.lives = 0
+		self.was_real_done  = True
+
+	def _step(self, action):
+		obs, reward, done, info = self.env.step(action)
+		self.was_real_done = done
+		# check current lives, make loss of life terminal,
+		# then update lives to handle bonus lives
+		lives = self.env.unwrapped.ale.lives()
+		if lives < self.lives and lives > 0:
+			# for Qbert somtimes we stay in lives == 0 condtion for a few frames
+			# so its important to keep lives > 0, so that we only reset once
+			# the environment advertises done.
+			done = True
+		self.lives = lives
+		return obs, reward, done, info
+
+	def _reset(self, **kwargs):
+		"""Reset only when lives are exhausted.
+		This way all states are still reachable even though lives are episodic,
+		and the learner need not know about any of this behind-the-scenes.
+		"""
+		if self.was_real_done:
+			obs = self.env.reset(**kwargs)
+		else:
+			# no-op step to advance from terminal/lost life state
+			obs, _, _, _ = self.env.step(0)
+		self.lives = self.env.unwrapped.ale.lives()
+		return obs
+
 class ResizeFrameEnv(gym.ObservationWrapper):
     def __init__(self, env, width = 84, height = 84):
         gym.ObservationWrapper.__init__(self, env)
@@ -158,7 +192,6 @@ class ResizeFrameEnv(gym.ObservationWrapper):
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
         return frame
-
 
 class FrameStack(gym.Wrapper):
     def __init__(self, env):
@@ -185,7 +218,6 @@ class FrameStack(gym.Wrapper):
     def get_state(self):
         return self.slices
 
-
 class MakeTensorEnv(gym.ObservationWrapper):
     def __init__(self, env):
         gym.ObservationWrapper.__init__(self, env)
@@ -196,16 +228,13 @@ class MakeTensorEnv(gym.ObservationWrapper):
         result = observation/255.0
         return result
 
-
-
-
 def Create(env, width = 84, height = 84, frame_stacking = 4):
     env = SetDimensions(env, width, height, frame_stacking)
     env = NoopResetEnv(env)
     env = FireResetEnv(env)
     env = SkipEnv(env, 4)
     env = ClipRewardEnv(env)
-    env = LiveLostReward(env)
+    env = EpisodicLifeEnv(env)
     env = ResizeFrameEnv(env)
     env = FrameStack(env)
     env = MakeTensorEnv(env)
