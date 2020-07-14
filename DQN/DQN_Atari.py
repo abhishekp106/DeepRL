@@ -8,17 +8,18 @@ import torch.tensor as tensor
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
+import gc
 
 import wrappers
 from model import CNN
 from replay_memory import ReplayMemory
 
-MEMORY_CAPACITY = 1000
-NUM_EPISODES = 10000
+MEMORY_CAPACITY = 10000
+NUM_EPISODES = 20000
 BATCH_SIZE = 32
 DISCOUNT = 0.99
-EPSILON_DECAY = 0.9999
 TARGET_UPDATE = 1000
+PATH = './dqn_atari_net.pth'
 
 class DQN():
     def __init__(self, env, Q, num_actions, optimizer):
@@ -54,8 +55,8 @@ class DQN():
         #state = state.transpose((2, 0, 1))
         return torch.from_numpy(obs).unsqueeze(0).detach()
 
-    def experience_replay(self):
-        if self.replay_memory.length() < BATCH_SIZE:
+    def experience_replay(self, num_steps):
+        if self.replay_memory.length < BATCH_SIZE or num_steps <= MEMORY_CAPACITY:
             return -1
         transitions = self.replay_memory.sample(BATCH_SIZE)
 
@@ -89,11 +90,17 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
+        del batch_states
+        del batch_next_states
+        torch.cuda.empty_cache()
+
         # comment out if using GPU
-        return q_values.mean().detach()
+        return q_values.mean().detach().item()
 
     def train(self):
         EPSILON = 1.0
+        EPSILON_MIN = 0.05
+        EPSILON_STEP = (EPSILON - EPSILON_MIN) / (1000000)
         self.env = env
         ep_rewards = []
         q_estimates = []
@@ -117,24 +124,26 @@ class DQN():
                 a = self.get_epsilon_greedy_action(q_values, EPSILON)
                 s_new, reward, done, _ = env.step(a)
 
-                self.replay_memory.add(s, q_values, a, reward, s_new, done)
-                if self.replay_memory.length() >= MEMORY_CAPACITY and not displayed:
+                self.replay_memory.add(s, a, reward, s_new, done)
+                if self.replay_memory.length >= MEMORY_CAPACITY and not displayed:
                     print('Capacity reached. *********************************************')
                     displayed = True
                 num_steps += 1
                 ep_length += 1
                 s = s_new
                 ep_reward += reward
-                x = self.experience_replay()
+                x = self.experience_replay(num_steps)
                 q_sum += x
+                if EPSILON > EPSILON_MIN and num_steps >= MEMORY_CAPACITY:
+                    EPSILON -= EPSILON_STEP
                 if num_steps % TARGET_UPDATE == 0:
-                    #print('update')
                     self.Q_target.load_state_dict(self.Q.state_dict())
-            if EPSILON > 0.02:
-                EPSILON *= EPSILON_DECAY
+                if num_steps % 4000 == 0:
+                    torch.save(self.Q.state_dict(), PATH)
             
-            ep_rewards.append(ep_reward)
-            q_estimates.append((q_sum / ep_length))
+            
+            #ep_rewards.append(ep_reward)
+            #q_estimates.append((q_sum / ep_length))
             ep_rewards_temp.append(ep_reward)
             q_estimates_temp.append((q_sum / ep_length))
             if episode % 50 == 0:
